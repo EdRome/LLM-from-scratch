@@ -1,0 +1,2414 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "863cd267",
+   "metadata": {
+    "papermill": {
+     "duration": 0.006567,
+     "end_time": "2025-05-11T18:41:40.625635",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:40.619068",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Fine-tuning to follow instructions\n",
+    "\n",
+    "This section will cover the fine-tuning of a LLM to follow human instructions. This is one of the main techniques behind developing LLMs for chatbot applications, personal assistants, and other conversational tasks.\n",
+    "\n",
+    "## Introduction to instruction fine-tuning\n",
+    "\n",
+    "The pretraining of the LLM is capable of *text completion*, meaning it can finish sentences or write text paragraphs given a fragment as input. However, pretrained LLMs oftern stuggle with specific instructions, such as \"Fix the grammar in this text\" or \"Convert this text into passive voice\".\n",
+    "\n",
+    "The first step is to prepare the dataset, so a given instruction produce a desired response:\n",
+    "\n",
+    "---\n",
+    "Example:\n",
+    "\n",
+    "|Instruction|Desired response|\n",
+    "| ----------- | ----------- |\n",
+    "|Convert 45 kilometer to meters|45 kilometers is 45000 meters|\n",
+    "|Provide a synonym for \"bright\"|A synonym for \"bright\" is \"radiant\"|\n",
+    "|Edit the following sentence to remove all passive voice: \"The song was composed by the artist\"|The artist composed the song|\n",
+    "\n",
+    "\n",
+    "## Preparing a dataset for supervised instruction fine-tuning\n",
+    "\n",
+    "The downloaded dataset constist of 1,100 instruction-response pairs similar to those in the previous table.\n",
+    "\n",
+    "> **NOTE:** The following dataset was created specifically for the book."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "67ac8cda",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:40.638070Z",
+     "iopub.status.busy": "2025-05-11T18:41:40.637437Z",
+     "iopub.status.idle": "2025-05-11T18:41:40.643034Z",
+     "shell.execute_reply": "2025-05-11T18:41:40.642518Z"
+    },
+    "papermill": {
+     "duration": 0.012848,
+     "end_time": "2025-05-11T18:41:40.644181",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:40.631333",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "import urllib.request"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "f97f0e54",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:40.656061Z",
+     "iopub.status.busy": "2025-05-11T18:41:40.655605Z",
+     "iopub.status.idle": "2025-05-11T18:41:44.476176Z",
+     "shell.execute_reply": "2025-05-11T18:41:44.475369Z"
+    },
+    "papermill": {
+     "duration": 3.827939,
+     "end_time": "2025-05-11T18:41:44.477599",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:40.649660",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "url = (\n",
+    "    \"https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch05/01_main-chapter-code/previous_chapters.py\"\n",
+    ")\n",
+    "filename = url.split(\"/\")[-1]\n",
+    "urllib.request.urlretrieve(url, filename)\n",
+    "\n",
+    "from previous_chapters import GPTModel"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "e6df8b89",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:44.490096Z",
+     "iopub.status.busy": "2025-05-11T18:41:44.489529Z",
+     "iopub.status.idle": "2025-05-11T18:41:58.531217Z",
+     "shell.execute_reply": "2025-05-11T18:41:58.530380Z"
+    },
+    "papermill": {
+     "duration": 14.049299,
+     "end_time": "2025-05-11T18:41:58.532701",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:44.483402",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "2025-05-11 18:41:46.239333: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered\n",
+      "WARNING: All log messages before absl::InitializeLog() is called are written to STDERR\n",
+      "E0000 00:00:1746988906.430245      19 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered\n",
+      "E0000 00:00:1746988906.490142      19 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered\n"
+     ]
+    }
+   ],
+   "source": [
+    "url = (\n",
+    "    \"https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch05/01_main-chapter-code/gpt_generate.py\"\n",
+    ")\n",
+    "filename = url.split(\"/\")[-1]\n",
+    "urllib.request.urlretrieve(url, filename)\n",
+    "\n",
+    "from gpt_generate import load_weights_into_gpt, text_to_token_ids, token_ids_to_text"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "7fd5b11a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:58.545417Z",
+     "iopub.status.busy": "2025-05-11T18:41:58.544939Z",
+     "iopub.status.idle": "2025-05-11T18:41:58.706702Z",
+     "shell.execute_reply": "2025-05-11T18:41:58.706163Z"
+    },
+    "papermill": {
+     "duration": 0.169313,
+     "end_time": "2025-05-11T18:41:58.707887",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:58.538574",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "url = (\n",
+    "    \"https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch05/01_main-chapter-code/gpt_download.py\"\n",
+    ")\n",
+    "filename = url.split(\"/\")[-1]\n",
+    "urllib.request.urlretrieve(url, filename)\n",
+    "\n",
+    "from gpt_download import download_and_load_gpt2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "81cb51ee",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:58.720623Z",
+     "iopub.status.busy": "2025-05-11T18:41:58.720400Z",
+     "iopub.status.idle": "2025-05-11T18:41:58.755650Z",
+     "shell.execute_reply": "2025-05-11T18:41:58.755130Z"
+    },
+    "papermill": {
+     "duration": 0.042571,
+     "end_time": "2025-05-11T18:41:58.756711",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:58.714140",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "import urllib.request\n",
+    "url = (\n",
+    "    \"https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch05/01_main-chapter-code/gpt_download.py\"\n",
+    ")\n",
+    "filename = url.split(\"/\")[-1]\n",
+    "urllib.request.urlretrieve(url, filename)\n",
+    "\n",
+    "from gpt_download import download_and_load_gpt2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "03927318",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:58.769378Z",
+     "iopub.status.busy": "2025-05-11T18:41:58.769152Z",
+     "iopub.status.idle": "2025-05-11T18:41:59.155179Z",
+     "shell.execute_reply": "2025-05-11T18:41:59.154333Z"
+    },
+    "papermill": {
+     "duration": 0.393707,
+     "end_time": "2025-05-11T18:41:59.156327",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:58.762620",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of entries: 1100\n",
+      "Example entry:\n",
+      " {'instruction': 'Identify the correct spelling of the following word.', 'input': 'Ocassion', 'output': \"The correct spelling is 'Occasion.'\"}\n",
+      "Another exmaple entry:\n",
+      " {'instruction': \"What is an antonym of 'complicated'?\", 'input': '', 'output': \"An antonym of 'complicated' is 'simple'.\"}\n"
+     ]
+    }
+   ],
+   "source": [
+    "import json\n",
+    "import os\n",
+    "import urllib\n",
+    "import torch\n",
+    "\n",
+    "# Creating a dictionary of GPTModel configurations will help to load weights and configuration\n",
+    "# based on the GPT model to be used.\n",
+    "model_configs = {\n",
+    "    \"gpt2-small (124M)\": {\"emb_dim\": 768, \"n_layers\": 12, \"n_heads\": 12},\n",
+    "    \"gpt2-medium (355M)\": {\"emb_dim\": 1024, \"n_layers\": 24, \"n_heads\": 16},\n",
+    "    \"gpt2-large (774M)\": {\"emb_dim\": 1280, \"n_layers\": 36, \"n_heads\": 20},\n",
+    "    \"gpt2-xl (1558M)\": {\"emb_dim\": 1600, \"n_layers\": 48, \"n_heads\": 25}\n",
+    "}\n",
+    "\n",
+    "def download_and_load_file(file_path, url):\n",
+    "    if not os.path.exists(file_path):\n",
+    "        with urllib.request.urlopen(url) as response:\n",
+    "            text_data = response.read().decode(\"utf-8\")\n",
+    "\n",
+    "        with open(file_path, \"w\", encoding='utf-8') as file:\n",
+    "            file.write(text_data)\n",
+    "\n",
+    "    with open(file_path, \"r\") as file:\n",
+    "        data = json.load(file)\n",
+    "    return data\n",
+    "\n",
+    "file_path = \"instruction-data.json\"\n",
+    "url = (\n",
+    "    \"https://raw.githubusercontent.com/rasbt/LLMs-from-scratch\"\n",
+    "    \"/main/ch07/01_main-chapter-code/instruction-data.json\"\n",
+    ")\n",
+    "\n",
+    "data = download_and_load_file(file_path, url)\n",
+    "print(\"Number of entries:\", len(data))\n",
+    "\n",
+    "print(\"Example entry:\\n\", data[50])\n",
+    "\n",
+    "print(\"Another exmaple entry:\\n\", data[999])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "60b09d19",
+   "metadata": {
+    "papermill": {
+     "duration": 0.005493,
+     "end_time": "2025-05-11T18:41:59.167835",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.162342",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "In this dataset, the samples are formatted as a python dictionary. Although, there are various way to format the samples, often called *prompt styles*.\n",
+    "\n",
+    "The current entry in the instruction dataset is:\n",
+    "```\n",
+    "{\n",
+    "    'instruction': 'Identify the correct spelling of the following word.', \n",
+    "    'input': 'Ocassion', \n",
+    "    'output': \"The correct spelling is 'Occasion.'\"\n",
+    "}\n",
+    "```\n",
+    "\n",
+    "One way to format the data entry to train the LLM is like Alpaca \n",
+    "```\n",
+    "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n",
+    "\n",
+    "### Instruction:\n",
+    "Identify the correct spelling of the following word.\n",
+    "\n",
+    "### Input:\n",
+    "Ocassion\n",
+    "\n",
+    "### Response:\n",
+    "The correct spelling is 'Occasion'.\n",
+    "```\n",
+    "\n",
+    "Or applying Phi-3 prompt style\n",
+    "```\n",
+    "<|user|>\n",
+    "Identify the correct spelling of the following word: 'Ocassion'\n",
+    "\n",
+    "<|assistant|>\n",
+    "The correct spelling is 'Occasion'.\n",
+    "```\n",
+    "\n",
+    "From now on, Alpaca prompt style is going to be used, mainly becuase is the more popular ones and it helped to define the original approach to fine-tuning.\n",
+    "\n",
+    "Given the dataset, here is defined a function that convert the original entries into the Alpaca-style input format."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "6961a48f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:59.179910Z",
+     "iopub.status.busy": "2025-05-11T18:41:59.179674Z",
+     "iopub.status.idle": "2025-05-11T18:41:59.183670Z",
+     "shell.execute_reply": "2025-05-11T18:41:59.183001Z"
+    },
+    "papermill": {
+     "duration": 0.011214,
+     "end_time": "2025-05-11T18:41:59.184648",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.173434",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def format_input(entry):\n",
+    "    instruction_text = (\n",
+    "        f\"Bellow is an instruction that describes a task. \"\n",
+    "        f\"Write a response that appropriately completes the request.\"\n",
+    "        f\"\\n\\n### Instruction:\\n{entry['instruction']}\"\n",
+    "    )\n",
+    "\n",
+    "    input_text = (\n",
+    "        f\"\\n\\n### Input:\\n{entry['input']}\" if entry['input'] else \"\"\n",
+    "    )\n",
+    "\n",
+    "    return instruction_text + input_text"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "ef521ee3",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:59.196691Z",
+     "iopub.status.busy": "2025-05-11T18:41:59.196477Z",
+     "iopub.status.idle": "2025-05-11T18:41:59.200420Z",
+     "shell.execute_reply": "2025-05-11T18:41:59.199582Z"
+    },
+    "papermill": {
+     "duration": 0.011299,
+     "end_time": "2025-05-11T18:41:59.201432",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.190133",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.\n",
+      "\n",
+      "### Instruction:\n",
+      "Identify the correct spelling of the following word.\n",
+      "\n",
+      "### Input:\n",
+      "Ocassion\n",
+      "\n",
+      "### Response:\n",
+      "The correct spelling is 'Occasion.'\n"
+     ]
+    }
+   ],
+   "source": [
+    "model_input = format_input(data[50])\n",
+    "desired_response = f\"\\n\\n### Response:\\n{data[50]['output']}\"\n",
+    "print(model_input + desired_response)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "30978d12",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:59.213215Z",
+     "iopub.status.busy": "2025-05-11T18:41:59.212989Z",
+     "iopub.status.idle": "2025-05-11T18:41:59.216848Z",
+     "shell.execute_reply": "2025-05-11T18:41:59.216172Z"
+    },
+    "papermill": {
+     "duration": 0.011266,
+     "end_time": "2025-05-11T18:41:59.218209",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.206943",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.\n",
+      "\n",
+      "### Instruction:\n",
+      "What is an antonym of 'complicated'?\n",
+      "\n",
+      "### Response:\n",
+      "An antonym of 'complicated' is 'simple'.\n"
+     ]
+    }
+   ],
+   "source": [
+    "# In case that 'input' is not given, the function omit the Input section in the prompt\n",
+    "model_input = format_input(data[999])\n",
+    "desired_response = f\"\\n\\n### Response:\\n{data[999]['output']}\"\n",
+    "print(model_input + desired_response)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "85e60986",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:59.230942Z",
+     "iopub.status.busy": "2025-05-11T18:41:59.230409Z",
+     "iopub.status.idle": "2025-05-11T18:41:59.235113Z",
+     "shell.execute_reply": "2025-05-11T18:41:59.234483Z"
+    },
+    "papermill": {
+     "duration": 0.012027,
+     "end_time": "2025-05-11T18:41:59.236135",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.224108",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training set length: 935\n",
+      "Validation set length: 55\n",
+      "Test set length: 110\n"
+     ]
+    }
+   ],
+   "source": [
+    "train_portion = int(len(data) * 0.85)\n",
+    "test_portion = int(len(data) * 0.1)\n",
+    "val_portion = len(data) - train_portion - test_portion\n",
+    "\n",
+    "train_data = data[:train_portion]\n",
+    "test_data = data[train_portion:train_portion + test_portion]\n",
+    "val_data = data[train_portion + test_portion:]\n",
+    "\n",
+    "print(\"Training set length:\", len(train_data))\n",
+    "print(\"Validation set length:\", len(val_data))\n",
+    "print(\"Test set length:\", len(test_data))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "427e13c4",
+   "metadata": {
+    "papermill": {
+     "duration": 0.005566,
+     "end_time": "2025-05-11T18:41:59.247329",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.241763",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Organizing data into training batches\n",
+    "\n",
+    "This section is about constructing the training batches effectively, involving the process of defining a function that recieves the data in its correct format.\n",
+    "\n",
+    "In previous implementations, the batches were created automatically by the PyTorch `DataLoader` class. But this time, the *collate* functions must be a user defined functions to be plugged into the `DataLoader`.\n",
+    "\n",
+    "> **Why not using `DataLoader`?**\n",
+    "> Becuase to train a model to follow instruction we must create specific arrangements on the data:\n",
+    "> 1. Pad all samples to be the same lenght while allowing different batches to have differents length. By picking the longest sequence and extending the other ones with a token to be ignored (this case the `<|endoftext|>`) and replace it with -100 placeholder to exclude it from any contribution to the loss function.\n",
+    "> 2. We don't have a traditional label to let the LLM know the target. To let the model predict the next word in the sequence, the alternative is to shift one position to the right.\n",
+    ">\n",
+    "> As you might see, using -100 is a particular number. The choice of using this value is becuase the PyTorch function has a default setting `cross_entropy(..., ignore_index=-100)`. You can test it by your own by runing this in a cell `?torch.nn.functional.cross_entropy` and it will return its signature."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "e41b0e4d",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:59.259372Z",
+     "iopub.status.busy": "2025-05-11T18:41:59.258715Z",
+     "iopub.status.idle": "2025-05-11T18:41:59.263249Z",
+     "shell.execute_reply": "2025-05-11T18:41:59.262705Z"
+    },
+    "papermill": {
+     "duration": 0.011557,
+     "end_time": "2025-05-11T18:41:59.264283",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.252726",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "import torch\n",
+    "from torch.utils.data import Dataset\n",
+    "\n",
+    "class InstructionDataset(Dataset):\n",
+    "    def __init__(self, data, tokenizer):\n",
+    "        self.data = data\n",
+    "        self.encoded_texts = []\n",
+    "        for entry in data:\n",
+    "            instruction_plus_input = format_input(entry)\n",
+    "            response_text = f\"\\n\\n### Response:\\n{entry['output']}\"\n",
+    "            full_text = instruction_plus_input + response_text\n",
+    "            self.encoded_texts.append(\n",
+    "                tokenizer.encode(full_text)\n",
+    "            )\n",
+    "\n",
+    "    def __getitem__(self, index):\n",
+    "        return self.encoded_texts[index]\n",
+    "\n",
+    "    def __len__(self):\n",
+    "        return len(self.data)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "e28cc266",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:41:59.276218Z",
+     "iopub.status.busy": "2025-05-11T18:41:59.276036Z",
+     "iopub.status.idle": "2025-05-11T18:42:00.819107Z",
+     "shell.execute_reply": "2025-05-11T18:42:00.818368Z"
+    },
+    "papermill": {
+     "duration": 1.550486,
+     "end_time": "2025-05-11T18:42:00.820253",
+     "exception": false,
+     "start_time": "2025-05-11T18:41:59.269767",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[50256]\n"
+     ]
+    }
+   ],
+   "source": [
+    "import tiktoken\n",
+    "\n",
+    "tokenizer = tiktoken.get_encoding(\"gpt2\")\n",
+    "print(tokenizer.encode(\"<|endoftext|>\", allowed_special={\"<|endoftext|>\"}))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "feb8714b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:42:00.832784Z",
+     "iopub.status.busy": "2025-05-11T18:42:00.832561Z",
+     "iopub.status.idle": "2025-05-11T18:42:00.836250Z",
+     "shell.execute_reply": "2025-05-11T18:42:00.835575Z"
+    },
+    "papermill": {
+     "duration": 0.011147,
+     "end_time": "2025-05-11T18:42:00.837293",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:00.826146",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# Testing that the custome collate function works as intended\n",
+    "inputs_1 = [0, 1, 2, 3, 4]\n",
+    "inputs_2 = [5, 6]\n",
+    "inputs_3 = [7, 8, 9]\n",
+    "batch = (\n",
+    "    inputs_1,\n",
+    "    inputs_2,\n",
+    "    inputs_3\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "7e7ab1f7",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:42:00.849264Z",
+     "iopub.status.busy": "2025-05-11T18:42:00.849083Z",
+     "iopub.status.idle": "2025-05-11T18:42:00.854732Z",
+     "shell.execute_reply": "2025-05-11T18:42:00.854087Z"
+    },
+    "papermill": {
+     "duration": 0.012878,
+     "end_time": "2025-05-11T18:42:00.855719",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:00.842841",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def custom_collate_fn(\n",
+    "    batch,\n",
+    "    pad_token_id=50256,\n",
+    "    ignore_index=-100,\n",
+    "    allowed_max_length=None,\n",
+    "    device=\"cpu\"\n",
+    "):\n",
+    "    batch_max_length = max(len(item)+1 for item in batch)\n",
+    "    inputs_lst, targets_lst = [], []\n",
+    "\n",
+    "    for item in batch:\n",
+    "        new_item = item.copy()\n",
+    "        new_item += [pad_token_id]\n",
+    "\n",
+    "        padded = (\n",
+    "            new_item + [pad_token_id] *\n",
+    "            (batch_max_length - len(new_item))\n",
+    "        )\n",
+    "        inputs = torch.tensor(padded[:-1])\n",
+    "        targets = torch.tensor(padded[1:])\n",
+    "\n",
+    "        mask = targets == pad_token_id\n",
+    "        indices = torch.nonzero(mask).squeeze()\n",
+    "        if indices.numel() > 1:\n",
+    "            targets[indices[1:]] = ignore_index\n",
+    "\n",
+    "        if allowed_max_length is not None:\n",
+    "            inputs = inputs[:allowed_max_length]\n",
+    "            targets = targets[:allowed_max_length]\n",
+    "        \n",
+    "        inputs_lst.append(inputs)\n",
+    "        targets_lst.append(targets)\n",
+    "\n",
+    "    inputs_tensor = torch.stack(inputs_lst).to(device)\n",
+    "    targets_tensor = torch.stack(targets_lst).to(device)\n",
+    "    return inputs_tensor, targets_tensor"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "b39050eb",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:42:00.867615Z",
+     "iopub.status.busy": "2025-05-11T18:42:00.867420Z",
+     "iopub.status.idle": "2025-05-11T18:42:00.926887Z",
+     "shell.execute_reply": "2025-05-11T18:42:00.926114Z"
+    },
+    "papermill": {
+     "duration": 0.066704,
+     "end_time": "2025-05-11T18:42:00.928012",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:00.861308",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "tensor([[    0,     1,     2,     3,     4],\n",
+      "        [    5,     6, 50256, 50256, 50256],\n",
+      "        [    7,     8,     9, 50256, 50256]])\n",
+      "tensor([[    1,     2,     3,     4, 50256],\n",
+      "        [    6, 50256,  -100,  -100,  -100],\n",
+      "        [    8,     9, 50256,  -100,  -100]])\n"
+     ]
+    }
+   ],
+   "source": [
+    "inputs, targets = custom_collate_fn(batch)\n",
+    "print(inputs)\n",
+    "print(targets)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "id": "efe4ccfc",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:42:00.940220Z",
+     "iopub.status.busy": "2025-05-11T18:42:00.940040Z",
+     "iopub.status.idle": "2025-05-11T18:42:00.998412Z",
+     "shell.execute_reply": "2025-05-11T18:42:00.997732Z"
+    },
+    "papermill": {
+     "duration": 0.065786,
+     "end_time": "2025-05-11T18:42:00.999544",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:00.933758",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Device: cuda\n"
+     ]
+    }
+   ],
+   "source": [
+    "from functools import partial\n",
+    "\n",
+    "device = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\n",
+    "print(\"Device:\", device)\n",
+    "\n",
+    "customized_collate_fn = partial(\n",
+    "    custom_collate_fn,\n",
+    "    device=device,\n",
+    "    allowed_max_length=1024\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "60e5b92a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:42:01.012712Z",
+     "iopub.status.busy": "2025-05-11T18:42:01.012475Z",
+     "iopub.status.idle": "2025-05-11T18:42:01.055332Z",
+     "shell.execute_reply": "2025-05-11T18:42:01.054744Z"
+    },
+    "papermill": {
+     "duration": 0.050715,
+     "end_time": "2025-05-11T18:42:01.056564",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:01.005849",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "from torch.utils.data import DataLoader\n",
+    "\n",
+    "num_workers = 0\n",
+    "batch_size = 8\n",
+    "\n",
+    "torch.manual_seed(123)\n",
+    "\n",
+    "train_dataset = InstructionDataset(train_data, tokenizer)\n",
+    "train_loader = DataLoader(\n",
+    "    train_dataset,\n",
+    "    batch_size=batch_size,\n",
+    "    collate_fn=customized_collate_fn,\n",
+    "    shuffle=True,\n",
+    "    drop_last=True,\n",
+    "    num_workers=num_workers\n",
+    ")\n",
+    "\n",
+    "val_dataset = InstructionDataset(val_data, tokenizer)\n",
+    "val_loader = DataLoader(\n",
+    "    val_dataset,\n",
+    "    batch_size=batch_size,\n",
+    "    collate_fn=customized_collate_fn,\n",
+    "    shuffle=False,\n",
+    "    drop_last=False,\n",
+    "    num_workers=num_workers\n",
+    ")\n",
+    "\n",
+    "test_dataset = InstructionDataset(test_data, tokenizer)\n",
+    "test_loader = DataLoader(\n",
+    "    test_dataset,\n",
+    "    batch_size=batch_size,\n",
+    "    collate_fn=customized_collate_fn,\n",
+    "    shuffle=False,\n",
+    "    drop_last=False,\n",
+    "    num_workers=num_workers\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "e918425a",
+   "metadata": {
+    "papermill": {
+     "duration": 0.006088,
+     "end_time": "2025-05-11T18:42:01.068755",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:01.062667",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Loading a pretrained LLM\n",
+    "\n",
+    "For this fine-tuning, the model to be loaded is the pretrained GPT model with 355-million parameters. The reason is that the 124-million-parameter model is too limited in capacity to achieve satisfactory results via fine-tuning. Specifically, smaller models lack the necessary capacity to learn and retain the intricate patterns and nuanced bahaviours required for high-quality instruction-following tasks.\n",
+    "\n",
+    "To create a baseline of model's performance, loading the 355M parameters and then providing it with an initial prompt would describe how it currently works and what to expect once the fine-tuning ended."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "id": "8017ed86",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:42:01.081437Z",
+     "iopub.status.busy": "2025-05-11T18:42:01.080934Z",
+     "iopub.status.idle": "2025-05-11T18:42:01.085362Z",
+     "shell.execute_reply": "2025-05-11T18:42:01.084792Z"
+    },
+    "papermill": {
+     "duration": 0.011876,
+     "end_time": "2025-05-11T18:42:01.086378",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:01.074502",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "CHOOSE_MODEL = \"gpt2-medium (355M)\"\n",
+    "BASE_CONFIG = {\n",
+    "    \"vocab_size\": 50257,\n",
+    "    \"context_length\": 1024,\n",
+    "    \"drop_rate\": 0.0,\n",
+    "    \"qkv_bias\": True\n",
+    "}\n",
+    "MODEL_CONFIGS = {\n",
+    "    \"gpt2-small (124M)\": {\"emb_dim\": 768, \"n_layers\": 12, \"n_heads\": 12},\n",
+    "    \"gpt2-medium (355M)\": {\"emb_dim\": 1024, \"n_layers\": 24, \"n_heads\": 16},\n",
+    "    \"gpt2-larget (774M)\": {\"emb_dim\": 1280, \"n_layers\": 36, \"n_heads\": 20},\n",
+    "    \"gpt2-xl (1558M)\": {\"emb_dim\": 1600, \"n_layers\": 48, \"n_heads\": 25}\n",
+    "}\n",
+    "BASE_CONFIG.update(model_configs[CHOOSE_MODEL])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "id": "94f580c3",
+   "metadata": {
+    "collapsed": true,
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:42:01.099108Z",
+     "iopub.status.busy": "2025-05-11T18:42:01.098926Z",
+     "iopub.status.idle": "2025-05-11T18:44:16.425475Z",
+     "shell.execute_reply": "2025-05-11T18:44:16.424814Z"
+    },
+    "jupyter": {
+     "outputs_hidden": true
+    },
+    "papermill": {
+     "duration": 135.334127,
+     "end_time": "2025-05-11T18:44:16.426857",
+     "exception": false,
+     "start_time": "2025-05-11T18:42:01.092730",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "checkpoint: 100%|██████████| 77.0/77.0 [00:00<00:00, 125kiB/s]\n",
+      "encoder.json: 100%|██████████| 1.04M/1.04M [00:00<00:00, 2.06MiB/s]\n",
+      "hparams.json: 100%|██████████| 91.0/91.0 [00:00<00:00, 189kiB/s]\n",
+      "model.ckpt.data-00000-of-00001: 100%|██████████| 1.42G/1.42G [02:06<00:00, 11.2MiB/s]\n",
+      "model.ckpt.index: 100%|██████████| 10.4k/10.4k [00:00<00:00, 14.2MiB/s]\n",
+      "model.ckpt.meta: 100%|██████████| 927k/927k [00:00<00:00, 1.86MiB/s]\n",
+      "vocab.bpe: 100%|██████████| 456k/456k [00:00<00:00, 1.37MiB/s]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "GPTModel(\n",
+       "  (tok_emb): Embedding(50257, 1024)\n",
+       "  (pos_emb): Embedding(1024, 1024)\n",
+       "  (drop_emb): Dropout(p=0.0, inplace=False)\n",
+       "  (trf_blocks): Sequential(\n",
+       "    (0): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (1): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (2): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (3): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (4): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (5): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (6): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (7): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (8): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (9): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (10): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (11): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (12): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (13): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (14): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (15): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (16): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (17): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (18): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (19): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (20): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (21): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (22): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "    (23): TransformerBlock(\n",
+       "      (att): MultiHeadAttention(\n",
+       "        (W_query): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_key): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (W_value): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (out_proj): Linear(in_features=1024, out_features=1024, bias=True)\n",
+       "        (dropout): Dropout(p=0.0, inplace=False)\n",
+       "      )\n",
+       "      (ff): FeedForward(\n",
+       "        (layers): Sequential(\n",
+       "          (0): Linear(in_features=1024, out_features=4096, bias=True)\n",
+       "          (1): GELU()\n",
+       "          (2): Linear(in_features=4096, out_features=1024, bias=True)\n",
+       "        )\n",
+       "      )\n",
+       "      (norm1): LayerNorm()\n",
+       "      (norm2): LayerNorm()\n",
+       "      (drop_shortcut): Dropout(p=0.0, inplace=False)\n",
+       "    )\n",
+       "  )\n",
+       "  (final_norm): LayerNorm()\n",
+       "  (out_head): Linear(in_features=1024, out_features=50257, bias=False)\n",
+       ")"
+      ]
+     },
+     "execution_count": 19,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "model_size = CHOOSE_MODEL.split(\" \")[-1].lstrip(\"(\").rstrip(\")\")\n",
+    "settings, params = download_and_load_gpt2(\n",
+    "    model_size=model_size, models_dir=\"gpt2\"\n",
+    ")\n",
+    "\n",
+    "model = GPTModel(BASE_CONFIG)\n",
+    "load_weights_into_gpt(model, params)\n",
+    "model.eval()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "id": "825db23e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:16.526322Z",
+     "iopub.status.busy": "2025-05-11T18:44:16.526061Z",
+     "iopub.status.idle": "2025-05-11T18:44:16.531385Z",
+     "shell.execute_reply": "2025-05-11T18:44:16.530619Z"
+    },
+    "papermill": {
+     "duration": 0.05537,
+     "end_time": "2025-05-11T18:44:16.532441",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:16.477071",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.\n",
+      "\n",
+      "### Instruction:\n",
+      "Convert the active sentence to passive: 'The chef cooks the meal every day.'\n"
+     ]
+    }
+   ],
+   "source": [
+    "torch.manual_seed(123)\n",
+    "input_text = format_input(val_data[0])\n",
+    "print(input_text)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "8365bde6",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:16.631599Z",
+     "iopub.status.busy": "2025-05-11T18:44:16.631183Z",
+     "iopub.status.idle": "2025-05-11T18:44:16.636812Z",
+     "shell.execute_reply": "2025-05-11T18:44:16.636275Z"
+    },
+    "papermill": {
+     "duration": 0.056198,
+     "end_time": "2025-05-11T18:44:16.637848",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:16.581650",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def generate(model, idx, max_new_tokens, context_size, temperature=0.0, top_k=None, eos_id=None):\n",
+    "    for _ in range(max_new_tokens):\n",
+    "        idx_cond = idx[:, -context_size:]\n",
+    "        with torch.no_grad():\n",
+    "            logits = model(idx_cond)\n",
+    "\n",
+    "        logits = logits[:, -1, :]\n",
+    "        if top_k is not None:\n",
+    "            top_logits, _ = torch.topk(logits, top_k)\n",
+    "            min_val = top_logits[:, -1]\n",
+    "            logits = torch.where(\n",
+    "                logits < min_val,\n",
+    "                torch.tensor(float('-inf')).to(logits.device),\n",
+    "                logits\n",
+    "            )\n",
+    "        if temperature > 0.0:\n",
+    "            logits = logits / temperature\n",
+    "            probs = torch.softmax(logits, dim=-1)\n",
+    "            idx_next = torch.multinomial(probs, num_samples=1)\n",
+    "        else:\n",
+    "            idx_next = torch.argmax(logits, dim=-1, keepdim=True)\n",
+    "\n",
+    "        if idx_next == eos_id:\n",
+    "            break\n",
+    "\n",
+    "        idx = torch.cat((idx, idx_next), dim=1)\n",
+    "\n",
+    "    return idx"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "id": "e5910de4",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:16.735501Z",
+     "iopub.status.busy": "2025-05-11T18:44:16.735325Z",
+     "iopub.status.idle": "2025-05-11T18:44:30.154847Z",
+     "shell.execute_reply": "2025-05-11T18:44:30.154225Z"
+    },
+    "papermill": {
+     "duration": 13.47062,
+     "end_time": "2025-05-11T18:44:30.156306",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:16.685686",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "token_ids = generate(\n",
+    "    model=model,\n",
+    "    idx=text_to_token_ids(input_text, tokenizer),\n",
+    "    max_new_tokens=35,\n",
+    "    context_size=BASE_CONFIG['context_length'],\n",
+    "    eos_id=50256,\n",
+    ")\n",
+    "generated_text = token_ids_to_text(token_ids, tokenizer)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "id": "a7601409",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:30.256795Z",
+     "iopub.status.busy": "2025-05-11T18:44:30.256556Z",
+     "iopub.status.idle": "2025-05-11T18:44:30.260572Z",
+     "shell.execute_reply": "2025-05-11T18:44:30.259699Z"
+    },
+    "papermill": {
+     "duration": 0.054944,
+     "end_time": "2025-05-11T18:44:30.261688",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:30.206744",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "### Example:\n",
+      "\n",
+      "Convert the active sentence to passive: 'The chef cooks the meal every day.'\n",
+      "\n",
+      "### Example:\n",
+      "\n",
+      "Convert the active\n"
+     ]
+    }
+   ],
+   "source": [
+    "response_text = generated_text[len(input_text):].strip()\n",
+    "print(response_text)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "da00de6c",
+   "metadata": {
+    "papermill": {
+     "duration": 0.048608,
+     "end_time": "2025-05-11T18:44:30.359521",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:30.310913",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Fine-tuning the LLM on instruction data\n",
+    "\n",
+    "This task will use functions develop in the previous chapter."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "id": "72241871",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:30.459107Z",
+     "iopub.status.busy": "2025-05-11T18:44:30.458831Z",
+     "iopub.status.idle": "2025-05-11T18:44:30.462592Z",
+     "shell.execute_reply": "2025-05-11T18:44:30.462038Z"
+    },
+    "papermill": {
+     "duration": 0.055119,
+     "end_time": "2025-05-11T18:44:30.463638",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:30.408519",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def calc_loss_batch(input_batch, target_batch, model, device):\n",
+    "    input_batch = input_batch.to(device)\n",
+    "    target_batch = target_batch.to(device)\n",
+    "    logits = model(input_batch)\n",
+    "    loss = torch.nn.functional.cross_entropy(\n",
+    "        logits.flatten(0, 1), target_batch.flatten()\n",
+    "    )\n",
+    "    return loss"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "id": "6f4cb9ba",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:30.562847Z",
+     "iopub.status.busy": "2025-05-11T18:44:30.562575Z",
+     "iopub.status.idle": "2025-05-11T18:44:30.567204Z",
+     "shell.execute_reply": "2025-05-11T18:44:30.566532Z"
+    },
+    "papermill": {
+     "duration": 0.055693,
+     "end_time": "2025-05-11T18:44:30.568317",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:30.512624",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def calc_loss_loader(data_loader, model, device, num_batches=None):\n",
+    "    total_loss = 0\n",
+    "    if len(data_loader) == 0:\n",
+    "        return float(\"nan\")\n",
+    "    elif num_batches is None:\n",
+    "        num_batches = len(data_loader)\n",
+    "    else:\n",
+    "        num_batches = min(num_batches, len(data_loader))\n",
+    "\n",
+    "    for i, (input_batch, target_batch) in enumerate(data_loader):\n",
+    "        if i < num_batches:\n",
+    "            loss = calc_loss_batch(\n",
+    "                input_batch, target_batch, model, device\n",
+    "            )\n",
+    "            total_loss += loss.item()\n",
+    "        else:\n",
+    "            break\n",
+    "    return total_loss / num_batches"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "id": "e2556d2b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:30.668662Z",
+     "iopub.status.busy": "2025-05-11T18:44:30.668461Z",
+     "iopub.status.idle": "2025-05-11T18:44:32.491604Z",
+     "shell.execute_reply": "2025-05-11T18:44:32.490897Z"
+    },
+    "papermill": {
+     "duration": 1.874494,
+     "end_time": "2025-05-11T18:44:32.492825",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:30.618331",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training loss: 3.945768642425537\n",
+      "Validation loss: 3.8757245540618896\n"
+     ]
+    }
+   ],
+   "source": [
+    "model.to(device)\n",
+    "torch.manual_seed(123)\n",
+    "\n",
+    "with torch.no_grad():\n",
+    "    train_loss = calc_loss_loader(\n",
+    "        train_loader, model, device, num_batches=5\n",
+    "    )\n",
+    "    val_loss = calc_loss_loader(\n",
+    "        val_loader, model, device, num_batches=5\n",
+    "    )\n",
+    "\n",
+    "print(\"Training loss:\", train_loss)\n",
+    "print(\"Validation loss:\", val_loss)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "id": "294e46b8",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:32.593725Z",
+     "iopub.status.busy": "2025-05-11T18:44:32.593469Z",
+     "iopub.status.idle": "2025-05-11T18:44:32.599345Z",
+     "shell.execute_reply": "2025-05-11T18:44:32.598763Z"
+    },
+    "papermill": {
+     "duration": 0.057311,
+     "end_time": "2025-05-11T18:44:32.600430",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:32.543119",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def train_model_simple(model, train_loader, val_loader, optimizer, device, num_epochs, eval_freq, eval_iter, start_context, tokenizer):\n",
+    "    train_losses, val_losses, track_tokens_seen = [], [], []\n",
+    "    tokens_seen, global_step = 0, -1\n",
+    "\n",
+    "    # Step 1, iterate over training epochs\n",
+    "    for epoch in range(num_epochs):\n",
+    "        model.train()\n",
+    "\n",
+    "        # Step 2, iterate over batches in each training epoch\n",
+    "        for input_batch, target_batch in train_loader:\n",
+    "            optimizer.zero_grad() # Step 3, Resets loss gradients from the previous batch iteration\n",
+    "\n",
+    "            # Step 4, calculate loss on current batch\n",
+    "            loss = calc_loss_batch(\n",
+    "                input_batch, target_batch, model, device\n",
+    "            )\n",
+    "\n",
+    "            # Step 5, backward pass to calculate loss gradients\n",
+    "            loss.backward() # Calculates loss gradients\n",
+    "            optimizer.step() # Updates model weights using loss gradients\n",
+    "            tokens_seen += input_batch.numel()\n",
+    "            global_step += 1\n",
+    "\n",
+    "            if global_step % eval_freq == 0:\n",
+    "                train_loss, val_loss = evaluate_model(\n",
+    "                    model, train_loader, val_loader, device, eval_iter\n",
+    "                )\n",
+    "                train_losses.append(train_loss)\n",
+    "                val_losses.append(val_loss)\n",
+    "                track_tokens_seen.append(tokens_seen)\n",
+    "\n",
+    "                # Step 6, print training and validation set losses\n",
+    "                print(f\"Ep {epoch+1} (Step {global_step:06d}):\"\n",
+    "                      f\"Train loss {train_loss:.3f}, \"\n",
+    "                      f\"Val loss {val_loss:.3f}\")\n",
+    "\n",
+    "        # Step 7, generate sample text for visual inspection\n",
+    "        generate_and_print_sample(\n",
+    "            model, tokenizer, device, start_context\n",
+    "        )\n",
+    "\n",
+    "    return train_losses, val_losses, track_tokens_seen"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "id": "f578b189",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:32.702747Z",
+     "iopub.status.busy": "2025-05-11T18:44:32.702447Z",
+     "iopub.status.idle": "2025-05-11T18:44:32.706610Z",
+     "shell.execute_reply": "2025-05-11T18:44:32.706092Z"
+    },
+    "papermill": {
+     "duration": 0.055693,
+     "end_time": "2025-05-11T18:44:32.707635",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:32.651942",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def evaluate_model(model, train_loader, val_loader, device, eval_iter):\n",
+    "    model.eval() # Disables dropout\n",
+    "    with torch.no_grad(): # During evaluation is not necessary to gradient tracking\n",
+    "        train_loss = calc_loss_loader(\n",
+    "            train_loader, model, device, num_batches=eval_iter\n",
+    "        )\n",
+    "        val_loss = calc_loss_loader(\n",
+    "            val_loader, model, device, num_batches=eval_iter\n",
+    "        )\n",
+    "\n",
+    "    model.train()\n",
+    "    return train_loss, val_loss"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "id": "fd34e9e2",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:32.806339Z",
+     "iopub.status.busy": "2025-05-11T18:44:32.806159Z",
+     "iopub.status.idle": "2025-05-11T18:44:32.810355Z",
+     "shell.execute_reply": "2025-05-11T18:44:32.809811Z"
+    },
+    "papermill": {
+     "duration": 0.055327,
+     "end_time": "2025-05-11T18:44:32.811351",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:32.756024",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def generate_text_simple(model, idx, max_new_tokens, context_size):\n",
+    "    for _ in range(max_new_tokens):\n",
+    "        idx_cond = idx[:, -context_size:]\n",
+    "        with torch.no_grad():\n",
+    "            logits = model(idx_cond)\n",
+    "\n",
+    "        logits = logits[:, -1, :]\n",
+    "        probas = torch.softmax(logits, dim=-1)\n",
+    "\n",
+    "        idx_next = torch.argmax(probas, dim=-1, keepdim=True)\n",
+    "        idx = torch.cat((idx, idx_next), dim=1)\n",
+    "\n",
+    "    return idx"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "id": "737be77b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:32.910615Z",
+     "iopub.status.busy": "2025-05-11T18:44:32.910439Z",
+     "iopub.status.idle": "2025-05-11T18:44:32.914600Z",
+     "shell.execute_reply": "2025-05-11T18:44:32.914078Z"
+    },
+    "papermill": {
+     "duration": 0.055215,
+     "end_time": "2025-05-11T18:44:32.915535",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:32.860320",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def generate_and_print_sample(model, tokenizer, device, start_context):\n",
+    "    model.eval()\n",
+    "    context_size = model.pos_emb.weight.shape[0]\n",
+    "    encoded = text_to_token_ids(start_context, tokenizer).to(device)\n",
+    "    with torch.no_grad():\n",
+    "        token_ids = generate_text_simple(\n",
+    "            model=model, idx=encoded, max_new_tokens=50, context_size=context_size\n",
+    "        )\n",
+    "\n",
+    "    decoded_text = token_ids_to_text(token_ids, tokenizer)\n",
+    "    print(decoded_text.replace(\"\\n\", \" \"))\n",
+    "    model.train()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "id": "11c3093a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:44:33.016070Z",
+     "iopub.status.busy": "2025-05-11T18:44:33.015818Z",
+     "iopub.status.idle": "2025-05-11T18:46:30.340706Z",
+     "shell.execute_reply": "2025-05-11T18:46:30.339848Z"
+    },
+    "papermill": {
+     "duration": 117.376655,
+     "end_time": "2025-05-11T18:46:30.341987",
+     "exception": false,
+     "start_time": "2025-05-11T18:44:32.965332",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Ep 1 (Step 000000):Train loss 2.656, Val loss 2.646\n",
+      "Ep 1 (Step 000005):Train loss 1.137, Val loss 1.066\n",
+      "Ep 1 (Step 000010):Train loss 0.858, Val loss 0.935\n",
+      "Ep 1 (Step 000015):Train loss 0.848, Val loss 0.891\n",
+      "Ep 1 (Step 000020):Train loss 0.774, Val loss 0.872\n",
+      "Ep 1 (Step 000025):Train loss 0.740, Val loss 0.848\n",
+      "Ep 1 (Step 000030):Train loss 0.782, Val loss 0.822\n",
+      "Ep 1 (Step 000035):Train loss 0.702, Val loss 0.800\n",
+      "Ep 1 (Step 000040):Train loss 0.663, Val loss 0.793\n",
+      "Ep 1 (Step 000045):Train loss 0.619, Val loss 0.779\n",
+      "Ep 1 (Step 000050):Train loss 0.659, Val loss 0.774\n",
+      "Ep 1 (Step 000055):Train loss 0.747, Val loss 0.753\n",
+      "Ep 1 (Step 000060):Train loss 0.709, Val loss 0.736\n",
+      "Ep 1 (Step 000065):Train loss 0.643, Val loss 0.725\n",
+      "Ep 1 (Step 000070):Train loss 0.536, Val loss 0.718\n",
+      "Ep 1 (Step 000075):Train loss 0.564, Val loss 0.717\n",
+      "Ep 1 (Step 000080):Train loss 0.598, Val loss 0.708\n",
+      "Ep 1 (Step 000085):Train loss 0.501, Val loss 0.693\n",
+      "Ep 1 (Step 000090):Train loss 0.551, Val loss 0.675\n",
+      "Ep 1 (Step 000095):Train loss 0.495, Val loss 0.670\n",
+      "Ep 1 (Step 000100):Train loss 0.497, Val loss 0.663\n",
+      "Ep 1 (Step 000105):Train loss 0.560, Val loss 0.661\n",
+      "Ep 1 (Step 000110):Train loss 0.548, Val loss 0.655\n",
+      "Ep 1 (Step 000115):Train loss 0.502, Val loss 0.654\n",
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.  ### Instruction: Convert the active sentence to passive: 'The chef cooks the meal every day.'  ### Response: The chef cooks the meal every day.<|endoftext|>The following is an instruction that describes a task. Write a response that appropriately completes the request.  ### Instruction: Convert the active sentence to passive: 'The\n",
+      "Ep 2 (Step 000120):Train loss 0.430, Val loss 0.663\n",
+      "Ep 2 (Step 000125):Train loss 0.448, Val loss 0.681\n",
+      "Ep 2 (Step 000130):Train loss 0.443, Val loss 0.673\n",
+      "Ep 2 (Step 000135):Train loss 0.402, Val loss 0.669\n",
+      "Ep 2 (Step 000140):Train loss 0.408, Val loss 0.668\n",
+      "Ep 2 (Step 000145):Train loss 0.370, Val loss 0.667\n",
+      "Ep 2 (Step 000150):Train loss 0.376, Val loss 0.663\n",
+      "Ep 2 (Step 000155):Train loss 0.406, Val loss 0.663\n",
+      "Ep 2 (Step 000160):Train loss 0.407, Val loss 0.669\n",
+      "Ep 2 (Step 000165):Train loss 0.370, Val loss 0.673\n",
+      "Ep 2 (Step 000170):Train loss 0.316, Val loss 0.674\n",
+      "Ep 2 (Step 000175):Train loss 0.330, Val loss 0.662\n",
+      "Ep 2 (Step 000180):Train loss 0.388, Val loss 0.648\n",
+      "Ep 2 (Step 000185):Train loss 0.414, Val loss 0.648\n",
+      "Ep 2 (Step 000190):Train loss 0.341, Val loss 0.635\n",
+      "Ep 2 (Step 000195):Train loss 0.336, Val loss 0.627\n",
+      "Ep 2 (Step 000200):Train loss 0.307, Val loss 0.628\n",
+      "Ep 2 (Step 000205):Train loss 0.349, Val loss 0.623\n",
+      "Ep 2 (Step 000210):Train loss 0.353, Val loss 0.625\n",
+      "Ep 2 (Step 000215):Train loss 0.391, Val loss 0.632\n",
+      "Ep 2 (Step 000220):Train loss 0.293, Val loss 0.643\n",
+      "Ep 2 (Step 000225):Train loss 0.336, Val loss 0.651\n",
+      "Ep 2 (Step 000230):Train loss 0.293, Val loss 0.648\n",
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.  ### Instruction: Convert the active sentence to passive: 'The chef cooks the meal every day.'  ### Response: The meal is cooked every day by the chef.<|endoftext|>The following is an instruction that describes a task. Write a response that appropriately completes the request.  ### Instruction: What is the capital of the United Kingdom\n",
+      "Training completed in 1.96 minutes.\n"
+     ]
+    }
+   ],
+   "source": [
+    "import time\n",
+    "\n",
+    "start_time = time.time()\n",
+    "torch.manual_seed(123)\n",
+    "optimizer = torch.optim.AdamW(\n",
+    "    model.parameters(), lr=5e-5, weight_decay=0.1\n",
+    ")\n",
+    "num_epochs = 2\n",
+    "\n",
+    "train_losses, val_losses, tokens_seen = train_model_simple(\n",
+    "    model, train_loader, val_loader, optimizer, device, \n",
+    "    num_epochs=num_epochs, eval_freq=5, eval_iter=5,\n",
+    "    start_context=format_input(val_data[0]), tokenizer=tokenizer\n",
+    ")\n",
+    "\n",
+    "end_time = time.time()\n",
+    "execution_time_minutes = (end_time - start_time) / 60\n",
+    "print(f\"Training completed in {execution_time_minutes:.2f} minutes.\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "id": "325ba59c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:46:30.445468Z",
+     "iopub.status.busy": "2025-05-11T18:46:30.444937Z",
+     "iopub.status.idle": "2025-05-11T18:46:30.836268Z",
+     "shell.execute_reply": "2025-05-11T18:46:30.835676Z"
+    },
+    "papermill": {
+     "duration": 0.444219,
+     "end_time": "2025-05-11T18:46:30.837544",
+     "exception": false,
+     "start_time": "2025-05-11T18:46:30.393325",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAeoAAAEiCAYAAAA21pHjAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjcuNSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/xnp5ZAAAACXBIWXMAAA9hAAAPYQGoP6dpAABaOklEQVR4nO3dd3gU1frA8e9uymbTeyMJBIgQeqiGoKIgTVHAiihgvSqoXES5XBVBf4oKKiqKer2Sq4goCIhIkY7SW+hEaQklBUjvye75/TFkw0pL3yS8n+eZJ7szZ2beswm8OzOn6JRSCiGEEELUSXpbByCEEEKIK5NELYQQQtRhkqiFEEKIOkwStRBCCFGHSaIWQggh6jBJ1EIIIUQdJolaCCGEqMMkUQshhBB1mCRqIYQQog6TRC1EA3LixAl0Oh1xcXG2DkUIUU0kUQtRx+h0uqsukyZNsnWIQohaZG/rAIQQ1pKSkiyvf/jhByZOnEh8fLxlnaurqy3CEkLYiFxRC1HHBAYGWhYPDw90Op3lvb+/Px988AEhISEYDAY6dOjA8uXLr3gsk8nEY489RsuWLUlMTATg559/pmPHjjg5OdG0aVMmT55MSUmJZR+dTsdXX33F4MGDcXZ2JiIigsWLF1u2p6enM2zYMPz8/DAajURERDBr1qwrxjB//nzatm2L0WjEx8eH3r17k5uba9n+1VdfERkZiZOTEy1btuSzzz6z2v/kyZPcf//9eHp64u3tzd13382JEycs20eOHMmgQYOYNm0aQUFB+Pj4MGrUKIqLi8v9mQtRpykhRJ01a9Ys5eHhYXn/wQcfKHd3d/X999+rw4cPq5dfflk5ODioP//8Uyml1PHjxxWgdu/erQoKCtTgwYNVVFSUSk1NVUoptWHDBuXu7q5iY2PV0aNH1W+//aaaNGmiJk2aZDkHoEJCQtScOXPUX3/9pZ5//nnl6uqqzp8/r5RSatSoUapDhw5q+/bt6vjx42rlypVq8eLFl43/zJkzyt7eXn3wwQfq+PHjau/everTTz9V2dnZSimlZs+erYKCgtRPP/2kjh07pn766Sfl7e2tYmNjlVJKFRUVqcjISPXYY4+pvXv3qoMHD6qHHnpItWjRQhUWFiqllBoxYoRyd3dXTz/9tDp06JD65ZdflLOzs/ryyy+r95chhI1IohaiDvt7og4ODlZvvfWWVZkuXbqoZ599VilVlqh///131atXL9WjRw+VkZFhKdurVy/19ttvW+3/7bffqqCgIMt7QL366quW9zk5OQpQy5YtU0opNXDgQPXoo4+WK/6dO3cqQJ04ceKy25s1a6bmzJljte7NN99U0dHRlthatGihzGazZXthYaEyGo1qxYoVSiktUTdu3FiVlJRYytx3333qgQceKFeMQtR18oxaiHoiKyuLM2fOEBMTY7U+JiaGPXv2WK0bOnQoISEhrFmzBqPRaFm/Z88eNm7cyFtvvWVZZzKZKCgoIC8vD2dnZwDatWtn2e7i4oK7uzupqakAPPPMM9xzzz3s2rWLPn36MGjQILp3737ZmNu3b0+vXr1o27Ytffv2pU+fPtx77714eXmRm5vL0aNHefzxx3nyySct+5SUlODh4WGJ98iRI7i5uVkdt6CggKNHj1ret27dGjs7O8v7oKAg9u3bd5VPU4j6QxK1EA3QgAEDmD17Nps3b+a2226zrM/JyWHy5MkMGTLkkn2cnJwsrx0cHKy26XQ6zGYzAP379ychIYGlS5eycuVKevXqxahRo5g2bdolx7Szs2PlypVs2rSJ3377jU8++YRXXnmFrVu3Wr4U/Oc//6Fbt26X7Fcab6dOnfjuu+8uObafn1+54hWivpNELUQ94e7uTnBwMBs3buSWW26xrN+4cSNdu3a1KvvMM8/Qpk0b7rrrLn799VdL+Y4dOxIfH0/z5s2rFIufnx8jRoxgxIgR3HTTTbz00kuXTdSgJc2YmBhiYmKYOHEijRs3ZuHChYwdO5bg4GCOHTvGsGHDLrtvx44d+eGHH/D398fd3b1KMQtRX0miFqIeeemll3j99ddp1qwZHTp0YNasWcTFxV32ivO5557DZDJx5513smzZMnr06MHEiRO58847CQsL495770Wv17Nnzx7279/P//3f/5UrhokTJ9KpUydat25NYWEhS5YsITIy8rJlt27dyurVq+nTpw/+/v5s3bqVs2fPWspPnjyZ559/Hg8PD/r160dhYSE7duwgPT2dsWPHMmzYMKZOncrdd9/NG2+8QUhICAkJCSxYsICXX36ZkJCQyn+YQtQTkqiFqEeef/55MjMzefHFF0lNTaVVq1YsXryYiIiIy5YfM2YMZrOZAQMGsHz5cvr27cuSJUt44403ePfdd3FwcKBly5Y88cQT5Y7B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\n",
+      "text/plain": [
+       "<Figure size 500x300 with 2 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "import matplotlib.pyplot as plt\n",
+    "from matplotlib.ticker import MaxNLocator\n",
+    "\n",
+    "def plot_losses(epochs_seen, tokens_seen, train_losses, val_losses):\n",
+    "    fig, ax1 = plt.subplots(figsize=(5, 3))\n",
+    "    ax1.plot(epochs_seen, train_losses, label=\"Training losses\")\n",
+    "    ax1.plot(\n",
+    "        epochs_seen, val_losses, linestyle=\"-.\", label=\"Validation loss\"\n",
+    "    )\n",
+    "    ax1.set_xlabel(\"Epoch\")\n",
+    "    ax1.set_ylabel(\"Loss\")\n",
+    "    ax1.legend(loc=\"upper right\")\n",
+    "    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))\n",
+    "    ax2 = ax1.twiny()\n",
+    "    ax2.plot(tokens_seen, train_losses, alpha=0)\n",
+    "    ax2.set_xlabel(\"Tokens seen\")\n",
+    "    fig.tight_layout()\n",
+    "    plt.show()\n",
+    "\n",
+    "epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))\n",
+    "plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "id": "f76c498c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:46:30.949006Z",
+     "iopub.status.busy": "2025-05-11T18:46:30.948708Z",
+     "iopub.status.idle": "2025-05-11T18:46:31.263081Z",
+     "shell.execute_reply": "2025-05-11T18:46:31.262311Z"
+    },
+    "papermill": {
+     "duration": 0.371563,
+     "end_time": "2025-05-11T18:46:31.264214",
+     "exception": false,
+     "start_time": "2025-05-11T18:46:30.892651",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAeoAAAEiCAYAAAA21pHjAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjcuNSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/xnp5ZAAAACXBIWXMAAA9hAAAPYQGoP6dpAABaOklEQVR4nO3dd3gU1frA8e9uymbTeyMJBIgQeqiGoKIgTVHAiihgvSqoXES5XBVBf4oKKiqKer2Sq4goCIhIkY7SW+hEaQklBUjvye75/TFkw0pL3yS8n+eZJ7szZ2beswm8OzOn6JRSCiGEEELUSXpbByCEEEKIK5NELYQQQtRhkqiFEEKIOkwStRBCCFGHSaIWQggh6jBJ1EIIIUQdJolaCCGEqMMkUQshhBB1mCRqIYQQog6TRC1EA3LixAl0Oh1xcXG2DkUIUU0kUQtRx+h0uqsukyZNsnWIQohaZG/rAIQQ1pKSkiyvf/jhByZOnEh8fLxlnaurqy3CEkLYiFxRC1HHBAYGWhYPDw90Op3lvb+/Px988AEhISEYDAY6dOjA8uXLr3gsk8nEY489RsuWLUlMTATg559/pmPHjjg5OdG0aVMmT55MSUmJZR+dTsdXX33F4MGDcXZ2JiIigsWLF1u2p6enM2zYMPz8/DAajURERDBr1qwrxjB//nzatm2L0WjEx8eH3r17k5uba9n+1VdfERkZiZOTEy1btuSzzz6z2v/kyZPcf//9eHp64u3tzd13382JEycs20eOHMmgQYOYNm0aQUFB+Pj4MGrUKIqLi8v9mQtRpykhRJ01a9Ys5eHhYXn/wQcfKHd3d/X999+rw4cPq5dfflk5ODioP//8Uyml1PHjxxWgdu/erQoKCtTgwYNVVFSUSk1NVUoptWHDBuXu7q5iY2PV0aNH1W+//aaaNGmiJk2aZDkHoEJCQtScOXPUX3/9pZ5//nnl6uqqzp8/r5RSatSoUapDhw5q+/bt6vjx42rlypVq8eLFl43/zJkzyt7eXn3wwQfq+PHjau/everTTz9V2dnZSimlZs+erYKCgtRPP/2kjh07pn766Sfl7e2tYmNjlVJKFRUVqcjISPXYY4+pvXv3qoMHD6qHHnpItWjRQhUWFiqllBoxYoRyd3dXTz/9tDp06JD65ZdflLOzs/ryyy+r95chhI1IohaiDvt7og4ODlZvvfWWVZkuXbqoZ599VilVlqh///131atXL9WjRw+VkZFhKdurVy/19ttvW+3/7bffqqCgIMt7QL366quW9zk5OQpQy5YtU0opNXDgQPXoo4+WK/6dO3cqQJ04ceKy25s1a6bmzJljte7NN99U0dHRlthatGihzGazZXthYaEyGo1qxYoVSiktUTdu3FiVlJRYytx3333qgQceKFeMQtR18oxaiHoiKyuLM2fOEBMTY7U+JiaGPXv2WK0bOnQoISEhrFmzBqPRaFm/Z88eNm7cyFtvvWVZZzKZKCgoIC8vD2dnZwDatWtn2e7i4oK7uzupqakAPPPMM9xzzz3s2rWLPn36MGjQILp3737ZmNu3b0+vXr1o27Ytffv2pU+fPtx77714eXmRm5vL0aNHefzxx3nyySct+5SUlODh4WGJ98iRI7i5uVkdt6CggKNHj1ret27dGjs7O8v7oKAg9u3bd5VPU4j6QxK1EA3QgAEDmD17Nps3b+a2226zrM/JyWHy5MkMGTLkkn2cnJwsrx0cHKy26XQ6zGYzAP379ychIYGlS5eycuVKevXqxahRo5g2bdolx7Szs2PlypVs2rSJ3377jU8++YRXXnmFrVu3Wr4U/Oc//6Fbt26X7Fcab6dOnfjuu+8uObafn1+54hWivpNELUQ94e7uTnBwMBs3buSWW26xrN+4cSNdu3a1KvvMM8/Qpk0b7rrrLn799VdL+Y4dOxIfH0/z5s2rFIufnx8jRoxgxIgR3HTTTbz00kuXTdSgJc2YmBhiYmKYOHEijRs3ZuHChYwdO5bg4GCOHTvGsGHDLrtvx44d+eGHH/D398fd3b1KMQtRX0miFqIeeemll3j99ddp1qwZHTp0YNasWcTFxV32ivO5557DZDJx5513smzZMnr06MHEiRO58847CQsL495770Wv17Nnzx7279/P//3f/5UrhokTJ9KpUydat25NYWEhS5YsITIy8rJlt27dyurVq+nTpw/+/v5s3bqVs2fPWspPnjyZ559/Hg8PD/r160dhYSE7duwgPT2dsWPHMmzYMKZOncrdd9/NG2+8QUhICAkJCSxYsICXX36ZkJCQyn+YQtQTkqiFqEeef/55MjMzefHFF0lNTaVVq1YsXryYiIiIy5YfM2YMZrOZAQMGsHz5cvr27cuSJUt44403ePfdd3FwcKBly5Y88cQT5Y7B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\n",
+      "text/plain": [
+       "<Figure size 500x300 with 2 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))\n",
+    "plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "5b8da17b",
+   "metadata": {
+    "papermill": {
+     "duration": 0.052857,
+     "end_time": "2025-05-11T18:46:31.370234",
+     "exception": false,
+     "start_time": "2025-05-11T18:46:31.317377",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Extracting and saving responses\n",
+    "\n",
+    "With the model fine-tuned, it's time to evaluate its performance on the held-out test set."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "id": "c128b1c4",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:46:31.474411Z",
+     "iopub.status.busy": "2025-05-11T18:46:31.473711Z",
+     "iopub.status.idle": "2025-05-11T18:46:32.995591Z",
+     "shell.execute_reply": "2025-05-11T18:46:32.994695Z"
+    },
+    "papermill": {
+     "duration": 1.575122,
+     "end_time": "2025-05-11T18:46:32.996708",
+     "exception": false,
+     "start_time": "2025-05-11T18:46:31.421586",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.\n",
+      "\n",
+      "### Instruction:\n",
+      "Rewrite the sentence using a simile.\n",
+      "\n",
+      "### Input:\n",
+      "The car is very fast.\n",
+      "\n",
+      "Correct response:\n",
+      ">> The car is as fast as lightning.\n",
+      "\n",
+      "Model response:\n",
+      ">> The car is as fast as a bullet.\n",
+      "-------------------------------------\n",
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.\n",
+      "\n",
+      "### Instruction:\n",
+      "What type of cloud is typically associated with thunderstorms?\n",
+      "\n",
+      "Correct response:\n",
+      ">> The type of cloud typically associated with thunderstorms is cumulonimbus.\n",
+      "\n",
+      "Model response:\n",
+      ">> The type of cloud typically associated with thunderstorms is a cumulus cloud.\n",
+      "-------------------------------------\n",
+      "Bellow is an instruction that describes a task. Write a response that appropriately completes the request.\n",
+      "\n",
+      "### Instruction:\n",
+      "Name the author of 'Pride and Prejudice'.\n",
+      "\n",
+      "Correct response:\n",
+      ">> Jane Austen.\n",
+      "\n",
+      "Model response:\n",
+      ">> The author of 'Pride and Prejudice' is Jane Austen.\n",
+      "-------------------------------------\n"
+     ]
+    }
+   ],
+   "source": [
+    "torch.manual_seed(123)\n",
+    "\n",
+    "for entry in test_data[:3]:\n",
+    "    input_text = format_input(entry)\n",
+    "    token_ids = generate(\n",
+    "        model=model,\n",
+    "        idx=text_to_token_ids(input_text, tokenizer).to(device),\n",
+    "        max_new_tokens=256,\n",
+    "        context_size=BASE_CONFIG[\"context_length\"],\n",
+    "        eos_id=50256\n",
+    "    )\n",
+    "    generated_text = token_ids_to_text(token_ids, tokenizer)\n",
+    "\n",
+    "    response_text = (\n",
+    "        generated_text[len(input_text):]\n",
+    "        .replace(\"### Response:\", \"\")\n",
+    "        .strip()\n",
+    "    )\n",
+    "    print(input_text)\n",
+    "    print(f\"\\nCorrect response:\\n>> {entry['output']}\")\n",
+    "    print(f\"\\nModel response:\\n>> {response_text.strip()}\")\n",
+    "    print(\"-------------------------------------\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "6f60bee9",
+   "metadata": {
+    "papermill": {
+     "duration": 0.051478,
+     "end_time": "2025-05-11T18:46:33.101298",
+     "exception": false,
+     "start_time": "2025-05-11T18:46:33.049820",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "Evaluating performance on this task is not as straightforward as it is for classification fine-tuning. In practice, instruction-fine-tuning LLMs such as chatbots are evaluated via multiple approaches:\n",
+    "\n",
+    "- Short-answer and multiple-choice benchmarks, such as Measuring Massive Multitask Language Understanding. Which test the general knowledge of a model.\n",
+    "- Human preference comparison to other LLMs, such as LMSYS chatbot arena.\n",
+    "- Automated conversational benchmarks, where another LLM like GPT-4 is used to evaluate the responses, such as AlpacaEval"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "id": "515ce5ca",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:46:33.205418Z",
+     "iopub.status.busy": "2025-05-11T18:46:33.204762Z",
+     "iopub.status.idle": "2025-05-11T18:47:25.594814Z",
+     "shell.execute_reply": "2025-05-11T18:47:25.594057Z"
+    },
+    "papermill": {
+     "duration": 52.443432,
+     "end_time": "2025-05-11T18:47:25.595855",
+     "exception": false,
+     "start_time": "2025-05-11T18:46:33.152423",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100%|██████████| 110/110 [00:52<00:00,  2.10it/s]\n"
+     ]
+    }
+   ],
+   "source": [
+    "from tqdm import tqdm\n",
+    "\n",
+    "for i, entry in tqdm(enumerate(test_data), total=len(test_data)):\n",
+    "    input_text = format_input(entry)\n",
+    "\n",
+    "    token_ids = generate(\n",
+    "        model=model,\n",
+    "        idx=text_to_token_ids(input_text, tokenizer).to(device),\n",
+    "        max_new_tokens=256,\n",
+    "        context_size=BASE_CONFIG['context_length'],\n",
+    "        eos_id=50256\n",
+    "    )\n",
+    "    generated_text = token_ids_to_text(token_ids, tokenizer)\n",
+    "\n",
+    "    response_text = (\n",
+    "        generated_text[len(input_text):]\n",
+    "        .replace(\"### Response:\", \"\")\n",
+    "        .strip()\n",
+    "    )\n",
+    "    test_data[i]['model_response'] = response_text\n",
+    "\n",
+    "with open(\"instruction-data-with-response.json\", \"w\") as file:\n",
+    "    json.dump(test_data, file, indent=4)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "id": "133804ee",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-05-11T18:47:25.711499Z",
+     "iopub.status.busy": "2025-05-11T18:47:25.711261Z",
+     "iopub.status.idle": "2025-05-11T18:47:28.137765Z",
+     "shell.execute_reply": "2025-05-11T18:47:28.136967Z"
+    },
+    "papermill": {
+     "duration": 2.485863,
+     "end_time": "2025-05-11T18:47:28.138924",
+     "exception": false,
+     "start_time": "2025-05-11T18:47:25.653061",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Model saved as gpt2-medium355M-sft.pth\n"
+     ]
+    }
+   ],
+   "source": [
+    "import re\n",
+    "\n",
+    "file_name = f\"{re.sub(r'[ ()]', '', CHOOSE_MODEL) }-sft.pth\"\n",
+    "torch.save(model.state_dict(), file_name)\n",
+    "print(f\"Model saved as {file_name}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "d26ff382",
+   "metadata": {
+    "papermill": {
+     "duration": 0.05748,
+     "end_time": "2025-05-11T18:47:28.254082",
+     "exception": false,
+     "start_time": "2025-05-11T18:47:28.196602",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Evaluating the fine-tuned LLM\n",
+    "\n",
+    "So far the model was evaluated by looking at their responses, but as mentioned there are other alternatives like comparing it against another model doing automated test.\n",
+    "\n",
+    "This section won't be done here since to do that I require to have Ollama runing on my PC and this is not a PC.\n",
+    "\n",
+    "At a glance, the idea behind this evalution is compare the newly created model with another one, like Llama 3 model, and rate their responses on a scale from 0 to 100 based on the given test set response as reference.\n",
+    "\n",
+    "This involves modifying the initial promp to Llama 3 would be:\n",
+    "\n",
+    "```\n",
+    "Given the input {entry}\n",
+    "and correct output {output},\n",
+    "score the model response {model_response}\n",
+    " on a scale from 0 to 100, where 100 is the best score.\n",
+    "```\n",
+    "\n",
+    "And we should expect a response like this:\n",
+    "\n",
+    "```\n",
+    "### Dataset response:\n",
+    ">> The car is as fast as lightning.\n",
+    "\n",
+    "### Model response\n",
+    ">> The car is as fast as a bullet.\n",
+    "\n",
+    "### Score:\n",
+    ">> I'd rate the model response \"The car is as fast as a bullet.\" an 85 out of 100.\n",
+    "\n",
+    "Here's why:\n",
+    "\n",
+    "The response uses a simile correctly, comparing the speed of the car to something else (in this case, a bullet).\n",
+    "\n",
+    "The comparison is relevant and make sense, as bullets are known for their high velocity.\n",
+    "\n",
+    "The phrase \"as fast as\" is used correctly to introduce the simile.\n",
+    "\n",
+    "The only reason I wouldn't give it a perfect score is that some people might find the comparison slightly less vivid or evocative than others. For example, comparing something to lightning (as in the original response) can be more dramatic and attention grabbing. However, \"as fast as a bullet\" is still a strong and effective simile that effectively conveys the idea of the car's speed.\n",
+    "\n",
+    "Overall, I think the model did a great job!\n",
+    "```"
+   ]
+  }
+ ],
+ "metadata": {
+  "kaggle": {
+   "accelerator": "none",
+   "dataSources": [],
+   "dockerImageVersionId": 31011,
+   "isGpuEnabled": false,
+   "isInternetEnabled": true,
+   "language": "python",
+   "sourceType": "notebook"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.11"
+  },
+  "papermill": {
+   "default_parameters": {},
+   "duration": 355.402908,
+   "end_time": "2025-05-11T18:47:31.915984",
+   "environment_variables": {},
+   "exception": null,
+   "input_path": "__notebook__.ipynb",
+   "output_path": "__notebook__.ipynb",
+   "parameters": {},
+   "start_time": "2025-05-11T18:41:36.513076",
+   "version": "2.6.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
